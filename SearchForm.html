@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Пошук інвентаря</title>
+</head>
+<body>
+    <h2>Пошук предмету за ID </h2>
+    <form action="/search" method="POST" enctype="application/x-www-form-urlencoded">
+        <div>
+            <label for="id">Серійний номер (ID):</label>
+            <input type="text" id="id" name="id"> </div>
+        <div>
+            <input type="checkbox" id="has_photo" name="has_photo" value="true">
+            <label for="has_photo">Додати посилання на фото до опису</label> </div>
+        <button type="submit">Шукати</button>
+    </form>
+</body>
+</html>

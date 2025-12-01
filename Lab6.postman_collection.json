@@ -1,0 +1,191 @@
+{
+	"info": {
+		"_postman_id": "c5ff0ae7-d0dd-4eaa-a3e1-43fada62c179",
+		"name": "Lab6",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "49955248",
+		"_collection_link": "https://s4sh4feed-2225403.postman.co/workspace/It's-Workspace~dbdd1126-7259-41f4-8361-c615aaed5da9/collection/49955248-c5ff0ae7-d0dd-4eaa-a3e1-43fada62c179?action=share&source=collection_link&creator=49955248"
+	},
+	"item": [
+		{
+			"name": "POST /register:",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "inventory_name",
+							"value": "",
+							"type": "text"
+						},
+						{
+							"key": "description",
+							"value": "",
+							"type": "text"
+						},
+						{
+							"key": "photo",
+							"type": "file",
+							"src": []
+						}
+					]
+				},
+				"url": {
+					"raw": "/register: ",
+					"path": [
+						"register: "
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET /inventory",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		},
+		{
+			"name": "GET /inventory/0",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		},
+		{
+			"name": "PUT /inventory/0:",
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{ \"name\": \"Red apple\" }",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:3000/inventory/0",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"inventory",
+						"0"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET /inventory/0/photo",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		},
+		{
+			"name": "POST /search",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "id",
+							"value": "0",
+							"type": "text"
+						},
+						{
+							"key": "has_photo",
+							"value": "true",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:3000/search",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"search"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GET ID/photo",
+			"request": {
+				"method": "GET",
+				"header": []
+			},
+			"response": []
+		},
+		{
+			"name": "PUT /inventory/0/photo",
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "photo",
+							"type": "file",
+							"src": "/C:/Users/Oleksandr Martsichuk/Downloads/istockphoto-584226186-612x612.jpg"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:3000/inventory/0/photo",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"inventory",
+						"0",
+						"photo"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "DELETE /inventory/0",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:3000/inventory/0",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "3000",
+					"path": [
+						"inventory",
+						"0"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
