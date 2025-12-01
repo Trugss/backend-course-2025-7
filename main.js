@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const { program } = require('commander');
 const fs = require('fs');
@@ -5,6 +6,7 @@ const path = require('path');
 const multer = require('multer');
 const swaggerUI = require('swagger-ui-express');
 const swaggerJsDoc = require('swagger-jsdoc');
+const { Pool } = require('pg');
 
 program
     .option('-h, --host <type>', 'Адреса') 
@@ -13,6 +15,33 @@ program
     .parse(process.argv);
 
 const options = program.opts();
+
+const pool = new Pool({
+    user: process.env.DB_USER,
+    host: process.env.DB_HOST,
+    database: process.env.DB_NAME,
+    password: process.env.DB_PASSWORD,
+    port: process.env.DB_PORT,     
+});
+
+pool.connect((err, client, release) => {
+    if (err) {
+        return console.error('Помилка підключення до БД:', err.stack);
+    }
+    console.log('Успішне підключення до бази даних');
+    
+    client.query(`
+        CREATE TABLE IF NOT EXISTS inventory (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            photo TEXT
+        )
+    `, (err, res) => {
+        release();
+        if (err) console.error('Помилка створення таблиці:', err.stack);
+    });
+});
 
 const swaggerOptions = {
     definition: {
@@ -41,39 +70,6 @@ const cacheDir = path.resolve(options.cache);
 if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
     console.log(`Створено директорію кешу: ${cacheDir}`);
-}
-
-const dbPath = path.join(cacheDir, 'inventory.json');
-
-let inventory = [];
-let currentId = 0;
-
-const saveData = () => {
-    const dataToSave = {
-        inventory: inventory,
-        currentId: currentId 
-    };
-    fs.writeFileSync(dbPath, JSON.stringify(dataToSave, null, 2));
-};
-
-if (fs.existsSync(dbPath)) {
-    try {
-        const rawData = fs.readFileSync(dbPath);
-        const data = JSON.parse(rawData);
- 
-        if (Array.isArray(data)) {
-             inventory = data;
-             currentId = inventory.length > 0 ? Math.max(...inventory.map(i => i.id)) + 1 : 0;
-        } else {
-             inventory = data.inventory || [];
-             currentId = data.currentId || 0;
-        }
-        console.log(`Завантажено ${inventory.length} елементів. Наступний ID: ${currentId}`);
-    } catch (err) {
-        console.error("Помилка читання бази даних:", err);
-        inventory = [];
-        currentId = 0;
-    }
 }
 
 const storage = multer.diskStorage({
@@ -129,23 +125,25 @@ app.get('/SearchForm.html', (req, res) => {
  *         description: Помилка - відсутній обов'язковий параметр
  */
 
-app.post('/register', upload.single('photo'), (req, res) => {
+app.post('/register', upload.single('photo'), async (req, res) => {
     const { inventory_name, description } = req.body;
 
     if (!inventory_name) {
         return res.status(400).send('Помилка: inventory_name є обов\'язковим');
     }
 
-    const newItem = {
-        id: currentId++, 
-        name: inventory_name,
-        description: description || '',
-        photo: req.file ? req.file.path : null
-    };
+    const photoPath = req.file ? req.file.path : null;
 
-    inventory.push(newItem);
-    saveData();
-    res.status(201).json(newItem);
+    try {
+        const query = 'INSERT INTO inventory (name, description, photo) VALUES ($1, $2, $3) RETURNING *';
+        const values = [inventory_name, description || '', photoPath];
+        const result = await pool.query(query, values);
+        
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Помилка сервера при збереженні');
+    }
 });
 
 /**
@@ -175,14 +173,22 @@ app.post('/register', upload.single('photo'), (req, res) => {
  *                     type: string
  */
 
-app.get('/inventory', (req, res) => {
-    const result = inventory.map(item => ({
-        id: item.id,
-        name: item.name,
-        description: item.description,
-        photo_url: item.photo ? `/inventory/${item.id}/photo` : null
-    }));
-    res.status(200).json(result);
+app.get('/inventory', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM inventory ORDER BY id ASC');
+        
+        const mappedResult = result.rows.map(item => ({
+            id: item.id,
+            name: item.name,
+            description: item.description,
+            photo_url: item.photo ? `/inventory/${item.id}/photo` : null
+        }));
+        
+        res.status(200).json(mappedResult);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Помилка отримання даних');
+    }
 });
 
 const findItemById = (id) => inventory.find(item => item.id === parseInt(id));
@@ -220,19 +226,26 @@ const findItemById = (id) => inventory.find(item => item.id === parseInt(id));
  *         description: Помилка - Річ не знайдено
  */
 
-app.get('/inventory/:id', (req, res) => {
-    const item = findItemById(req.params.id);
-    if (!item) {
-        return res.status(404).send('Помилка: Річ не знайдено');
-    }
+app.get('/inventory/:id', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT * FROM inventory WHERE id = $1', [req.params.id]);
+        
+        if (rows.length === 0) {
+            return res.status(404).send('Помилка: Річ не знайдено');
+        }
 
-    const result = {
-        id: item.id,
-        name: item.name,
-        description: item.description,
-        photo_url: item.photo ? `/inventory/${item.id}/photo` : null
-    };
-    res.status(200).json(result);
+        const item = rows[0];
+        const result = {
+            id: item.id,
+            name: item.name,
+            description: item.description,
+            photo_url: item.photo ? `/inventory/${item.id}/photo` : null
+        };
+        res.status(200).json(result);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Помилка сервера');
+    }
 });
 
 /**
@@ -266,17 +279,25 @@ app.get('/inventory/:id', (req, res) => {
  *         description: Помилка - Річ не знайдено
  */
 
-app.put('/inventory/:id', (req, res) => {
-    const item = findItemById(req.params.id);
-    if (!item) {
-        return res.status(404).send('Помилка: Річ не знайдено');
+app.put('/inventory/:id', async (req, res) => {
+    const { name, description } = req.body;
+    try {
+        const check = await pool.query('SELECT * FROM inventory WHERE id = $1', [req.params.id]);
+        if (check.rows.length === 0) return res.status(404).send('Помилка: Річ не знайдено');
+
+        const query = `
+            UPDATE inventory 
+            SET name = COALESCE($1, name), 
+                description = COALESCE($2, description) 
+            WHERE id = $3 RETURNING *
+        `;
+        const result = await pool.query(query, [name, description, req.params.id]);
+        
+        res.status(200).json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Помилка оновлення');
     }
-
-    if (req.body.name) item.name = req.body.name;
-    if (req.body.description) item.description = req.body.description;
-
-    saveData();
-    res.status(200).json(item);
 });
 
 /**
@@ -301,15 +322,20 @@ app.put('/inventory/:id', (req, res) => {
  *         description: Помилка - Фото не знайдено
  */
 
-app.get('/inventory/:id/photo', (req, res) => {
-    const item = findItemById(req.params.id);
-
-    if (!item || !item.photo || !fs.existsSync(item.photo)) {
-        return res.status(404).send('Помилка: Фото не знайдено');
-
+app.get('/inventory/:id/photo', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT photo FROM inventory WHERE id = $1', [req.params.id]);
+        
+        if (rows.length === 0 || !rows[0].photo || !fs.existsSync(rows[0].photo)) {
+            return res.status(404).send('Помилка: Фото не знайдено');
+        }
+        
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.status(200).sendFile(path.resolve(rows[0].photo));
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Помилка сервера');
     }
-    res.setHeader('Content-Type', 'image/jpeg');
-    res.status(200).sendFile(item.photo);
 });
 
 /**
@@ -344,22 +370,32 @@ app.get('/inventory/:id/photo', (req, res) => {
  *         description: Річ не знайдено
  */
 
-app.put('/inventory/:id/photo', upload.single('photo'), (req, res) => {
-    const item = findItemById(req.params.id);
-
-    if (!item) {
-        return res.status(404).send('Помилка: Річ не знайдено');
-    }
-
+app.put('/inventory/:id/photo', upload.single('photo'), async (req, res) => {
     if (!req.file) {
         return res.status(400).send('Помилка: Файл фото не надано');
     }
 
-    if (item.photo && fs.existsSync(item.photo)) fs.unlinkSync(item.photo);
+    try {
+        const { rows } = await pool.query('SELECT photo FROM inventory WHERE id = $1', [req.params.id]);
+        if (rows.length === 0) {
+            fs.unlinkSync(req.file.path);
+            return res.status(404).send('Помилка: Річ не знайдено');
+        }
 
-    item.photo = req.file.path;
-    saveData();
-    res.status(200).json({  message: 'Фото оновлено', path: item.photo });
+        if (rows[0].photo && fs.existsSync(rows[0].photo)) {
+            fs.unlinkSync(rows[0].photo);
+        }
+
+        const updateResult = await pool.query(
+            'UPDATE inventory SET photo = $1 WHERE id = $2 RETURNING photo',
+            [req.file.path, req.params.id]
+        );
+
+        res.status(200).json({ message: 'Фото оновлено', path: updateResult.rows[0].photo });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Помилка сервера');
+    }
 });
 
 /**
@@ -382,20 +418,25 @@ app.put('/inventory/:id/photo', upload.single('photo'), (req, res) => {
  *         description: Помилка - Річ не знайдено
  */
 
-app.delete('/inventory/:id', (req, res) => {
-    const index = inventory.findIndex(item => item.id === parseInt(req.params.id));
-    if (index === -1) {
-        return res.status(404).send('Помилка: Річ не знайдено');
+app.delete('/inventory/:id', async (req, res) => {
+    try {
+        const { rows } = await pool.query('DELETE FROM inventory WHERE id = $1 RETURNING *', [req.params.id]);
+        
+        if (rows.length === 0) {
+            return res.status(404).send('Помилка: Річ не знайдено');
+        }
+
+        const deletedItem = rows[0];
+
+        if (deletedItem.photo && fs.existsSync(deletedItem.photo)) {
+            fs.unlinkSync(deletedItem.photo);
+        }
+
+        res.status(200).json({ message: 'Річ видалена', item: deletedItem });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Помилка сервера');
     }
-
-    const deletedItem = inventory.splice(index, 1);
-
-    if (deletedItem[0].photo && fs.existsSync(deletedItem[0].photo)) {
-        fs.unlinkSync(deletedItem[0].photo);
-    }
-
-    saveData();
-    res.status(200).json({ message: 'Річ видалена', item: deletedItem[0] });
 });
 
 /**
@@ -423,32 +464,39 @@ app.delete('/inventory/:id', (req, res) => {
  *         description: Помилка - Річ не знайдено
  */
 
-app.post('/search', (req, res) => {
+app.post('/search', async (req, res) => {
     const { id, has_photo } = req.body;
 
     if (id === undefined || id === null) {
         return res.status(400).send('Помилка: не вказано ID');
     }
 
-    const item = findItemById(id);
-    if (!item) {
-        return res.status(404).send('Помилка: Річ не знайдено');
+    try {
+        const { rows } = await pool.query('SELECT * FROM inventory WHERE id = $1', [id]);
+        
+        if (rows.length === 0) {
+            return res.status(404).send('Помилка: Річ не знайдено');
+        }
+
+        const item = rows[0];
+        let description = item.description;
+        const wantsPhoto = String(has_photo) === 'true' || has_photo === true || has_photo === 'on';
+
+        if (wantsPhoto && item.photo) {
+            description += ` [Фото: /inventory/${item.id}/photo]`;
+        }
+
+        const result = {
+            id: item.id,
+            name: item.name,
+            description: description,
+        };
+
+        res.status(200).json(result);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Помилка сервера');
     }
-
-    let description = item.description;
-    const wantsPhoto = String(has_photo) === 'true' || has_photo === true || has_photo === 'on';
-
-    if (wantsPhoto && item.photo) {
-        description += ` [Фото: /inventory/${item.id}/photo]`;
-    }
-
-    const result = {
-        id: item.id,
-        name: item.name,
-        description: description,
-    };
-
-    res.status(200).json(result);
 });
 
 app.all('/register', (req, res) => {
@@ -459,6 +507,9 @@ app.use((req, res) => {
     res.status(404).send('Помилка: Ендпоінт не знайдено');
 });
 
-app.listen(options.port, options.host, () => {
-    console.log(`Сервер запущено на http://${options.host}:${options.port}`); 
+const serverPort = options.port || process.env.PORT || 3000;
+const serverHost = options.host || '0.0.0.0';
+
+app.listen(serverPort, serverHost, () => {
+    console.log(`Сервер запущено на http://${serverHost}:${serverPort}`); 
 });
